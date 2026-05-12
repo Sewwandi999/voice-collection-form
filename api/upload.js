@@ -1,57 +1,103 @@
-import { handleUpload } from "@vercel/blob/client";
+import { put } from '@vercel/blob';
 
 export default async function handler(req, res) {
-
-  if (req.method !== "POST") {
+  if (req.method !== 'POST') {
     return res.status(405).json({
-      error: "Method not allowed"
+      error: 'Method not allowed'
     });
   }
 
   try {
+    if (!process.env.BLOB_READ_WRITE_TOKEN) {
+      return res.status(500).json({
+        error: 'BLOB_READ_WRITE_TOKEN is missing'
+      });
+    }
 
-    const body = req.body;
+    const chunks = [];
 
-    const jsonResponse = await handleUpload({
-      body,
-      request: req,
+    for await (const chunk of req) {
+      chunks.push(chunk);
+    }
 
-      onBeforeGenerateToken: async (pathname, clientPayload) => {
+    const buffer = Buffer.concat(chunks);
 
-        return {
-          allowedContentTypes: [
-            "audio/webm",
-            "audio/webm;codecs=opus",
-            "audio/mp4",
-            "audio/aac"
-          ],
+    if (!buffer || buffer.length === 0) {
+      return res.status(400).json({
+        error: 'No audio data received'
+      });
+    }
 
-          addRandomSuffix: true,
+    const contentType = req.headers['content-type'] || 'audio/webm';
 
-          tokenPayload: JSON.stringify({
-            uploadedAt: new Date().toISOString(),
-            metadata: clientPayload || ""
-          })
-        };
-      },
+    let extension = 'webm';
 
-      onUploadCompleted: async ({ blob, tokenPayload }) => {
+    if (contentType.includes('mp4')) {
+      extension = 'm4a';
+    } else if (contentType.includes('aac')) {
+      extension = 'aac';
+    } else if (contentType.includes('wav')) {
+      extension = 'wav';
+    }
 
-        console.log("Upload completed");
-        console.log(blob.url);
-        console.log(tokenPayload);
+    let metadata = {};
 
+    if (req.headers['x-metadata']) {
+      try {
+        metadata = JSON.parse(decodeURIComponent(req.headers['x-metadata']));
+      } catch (error) {
+        metadata = {};
       }
+    }
+
+    const emotion = metadata.emotion || 'unknown';
+    const language = metadata.language || 'unknown';
+    const timestamp = Date.now();
+
+    const audioFilename =
+      `voice-recordings/${emotion}/${language}/voice-${timestamp}.${extension}`;
+
+    const metadataFilename =
+      `voice-recordings/${emotion}/${language}/metadata-${timestamp}.json`;
+
+    const audioBlob = await put(audioFilename, buffer, {
+      access: 'public',
+      contentType: contentType,
+      addRandomSuffix: true
     });
 
-    return res.status(200).json(jsonResponse);
+    const metadataObject = {
+      audio_url: audioBlob.url,
+      audio_filename: audioFilename,
+      file_size_bytes: buffer.length,
+      content_type: contentType,
+      submitted_at: new Date().toISOString(),
+      ...metadata
+    };
+
+    const metadataBlob = await put(
+      metadataFilename,
+      JSON.stringify(metadataObject, null, 2),
+      {
+        access: 'public',
+        contentType: 'application/json',
+        addRandomSuffix: true
+      }
+    );
+
+    return res.status(200).json({
+      message: 'Voice uploaded successfully!',
+      url: audioBlob.url,
+      metadata_url: metadataBlob.url,
+      size: buffer.length,
+      type: contentType,
+      metadata: metadataObject
+    });
 
   } catch (error) {
-
-    console.error(error);
-
-    return res.status(400).json({
-      error: error.message
+    return res.status(500).json({
+      error: 'Upload failed',
+      details: error.message
     });
   }
 }
