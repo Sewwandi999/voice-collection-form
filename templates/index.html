@@ -141,6 +141,12 @@
     <p id="status"></p>
 </div>
 
+<script type="module">
+    import { upload } from 'https://esm.sh/@vercel/blob/client';
+
+    window.uploadToVercelBlob = upload;
+</script>
+
 <script>
     const scripts = {
         happy: {
@@ -329,74 +335,68 @@
         }
     }
 
-    async function submitRecording() {
-        if (!recordedBlob) {
-            alert("Please record your voice first.");
-            return;
-        }
-
-        if (recordedBlob.size === 0) {
-            alert("Recording is empty. Please record again.");
-            return;
-        }
-
-        if (recordedBlob.size > 2 * 1024 * 1024) {
-            alert("Voice file is too large. Please record less than 3 seconds.");
-            return;
-        }
-
-        document.getElementById("status").innerText = "Uploading... please wait.";
-
-        const emotion = document.getElementById("emotion").value;
-        const language = document.getElementById("language").value;
-        const name = document.getElementById("name").value || "anonymous";
-        const ageRange = document.getElementById("age_range").value;
-        const gender = document.getElementById("gender").value;
-        const script = document.getElementById("scriptBox").innerText;
-        const noiseLevel = document.getElementById("noise_level").value;
-
-        const metadata = {
-            name: name,
-            age_range: ageRange,
-            gender: gender,
-            language: language,
-            emotion: emotion,
-            script: script,
-            noise_level: noiseLevel
-        };
-
-        try {
-            const response = await fetch("/api/upload", {
-                method: "POST",
-                headers: {
-                    "Content-Type": recordedBlob.type || "audio/webm",
-                    "X-Metadata": encodeURIComponent(JSON.stringify(metadata))
-                },
-                body: recordedBlob
-            });
-
-            const result = await response.json();
-
-            if (!response.ok) {
-                throw new Error(result.error || result.details || "Upload failed");
-            }
-
-            document.getElementById("status").innerText =
-                "Submitted successfully! Thank you.";
-
-            console.log("Uploaded audio:", result.url);
-            console.log("Metadata:", result.metadata);
-
-            recordedBlob = null;
-            document.getElementById("audioPlayback").src = "";
-            updateScript();
-
-        } catch (error) {
-            document.getElementById("status").innerText =
-                "Submit failed: " + error.message;
-            console.error(error);
-        }
+async function submitRecording() {
+    if (!recordedBlob) {
+        alert("Please record your voice first.");
+        return;
     }
+
+    if (recordedBlob.size === 0) {
+        alert("Recording is empty. Please record again.");
+        return;
+    }
+
+    document.getElementById("status").innerText = "Uploading... please wait.";
+
+    const emotion = document.getElementById("emotion").value;
+    const language = document.getElementById("language").value;
+
+    const metadata = {
+        name: document.getElementById("name").value || "anonymous",
+        age_range: document.getElementById("age_range").value,
+        gender: document.getElementById("gender").value,
+        language: language,
+        emotion: emotion,
+        script: document.getElementById("scriptBox").innerText,
+        noise_level: document.getElementById("noise_level").value,
+        submitted_at: new Date().toISOString()
+    };
+
+    try {
+        let extension = "webm";
+
+        if (recordedBlob.type.includes("mp4")) {
+            extension = "m4a";
+        } else if (recordedBlob.type.includes("aac")) {
+            extension = "aac";
+        }
+
+        const fileName =
+            `voice-recordings/${emotion}/${language}/voice-${Date.now()}.${extension}`;
+
+        const blob = await window.uploadToVercelBlob(fileName, recordedBlob, {
+            access: "public",
+            handleUploadUrl: "/api/upload",
+            clientPayload: JSON.stringify(metadata)
+        });
+
+        document.getElementById("status").innerText =
+            "Submitted successfully! Thank you.";
+
+        console.log("Uploaded audio:", blob.url);
+        console.log("Metadata:", metadata);
+
+        recordedBlob = null;
+        document.getElementById("audioPlayback").src = "";
+        updateScript();
+
+    } catch (error) {
+        document.getElementById("status").innerText =
+            "Submit failed: " + error.message;
+
+        console.error(error);
+    }
+}
 
     updateScript();
 </script>
