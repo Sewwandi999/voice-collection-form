@@ -290,7 +290,8 @@
                 "Content-Type": recordedBlob.type || "audio/webm"
             },
             body: recordedBlob
-        }); 
+        });
+
         const result = await response.json();
         document.getElementById("status").innerText = result.message;
 
