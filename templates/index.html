@@ -284,11 +284,13 @@
         formData.append("script", document.getElementById("scriptBox").innerText);
         formData.append("noise_level", document.getElementById("noise_level").value);
 
-        const response = await fetch("/upload", {
+        const response = await fetch("/api/upload", {
             method: "POST",
-            body: formData
-        });
-
+            headers: {
+                "Content-Type": recordedBlob.type || "audio/webm"
+            },
+            body: recordedBlob
+        }); 
         const result = await response.json();
         document.getElementById("status").innerText = result.message;
 
