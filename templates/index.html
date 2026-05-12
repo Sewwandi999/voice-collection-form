@@ -234,14 +234,23 @@
         recordedBlob = null;
 
         const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-        mediaRecorder = new MediaRecorder(stream);
+
+        let mimeType = "";
+
+        if (MediaRecorder.isTypeSupported("audio/mp4")) {
+            mimeType = "audio/mp4";
+        } else if (MediaRecorder.isTypeSupported("audio/webm")) {
+            mimeType = "audio/webm";
+        }
+
+        mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
 
         mediaRecorder.ondataavailable = event => {
             audioChunks.push(event.data);
         };
 
         mediaRecorder.onstop = () => {
-            recordedBlob = new Blob(audioChunks, { type: "audio/webm" });
+            recordedBlob = new Blob(audioChunks, { type: mimeType || "audio/webm" });
             const audioUrl = URL.createObjectURL(recordedBlob);
             document.getElementById("audioPlayback").src = audioUrl;
         };
@@ -265,7 +274,8 @@
 
         const formData = new FormData();
 
-        formData.append("audio", recordedBlob, "voice.webm");
+        const extension = recordedBlob.type.includes("mp4") ? "m4a" : "webm";
+        formData.append("audio", recordedBlob, "voice." + extension);
         formData.append("name", document.getElementById("name").value);
         formData.append("age_range", document.getElementById("age_range").value);
         formData.append("gender", document.getElementById("gender").value);
