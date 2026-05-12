@@ -2,6 +2,8 @@
 <html>
 <head>
     <title>Voice Sentiment Data Collection</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
     <style>
         body {
             font-family: Arial, sans-serif;
@@ -28,12 +30,13 @@
             display: block;
         }
 
-        input, select, textarea, button {
+        input, select, button {
             width: 100%;
             padding: 10px;
             margin-top: 6px;
             border-radius: 8px;
             border: 1px solid #ccc;
+            box-sizing: border-box;
         }
 
         button {
@@ -69,8 +72,15 @@
             width: 100%;
             margin-top: 15px;
         }
+
+        #status {
+            font-size: 15px;
+            margin-top: 15px;
+            font-weight: bold;
+        }
     </style>
 </head>
+
 <body>
 
 <div class="container">
@@ -112,7 +122,7 @@
     <label>Script to Read</label>
     <div class="script-box" id="scriptBox"></div>
 
-    <button onclick="updateScript()">Get Another Script</button>
+    <button type="button" onclick="updateScript()">Get Another Script</button>
 
     <label>Recording Environment</label>
     <select id="noise_level">
@@ -121,12 +131,12 @@
         <option value="noisy">Noisy</option>
     </select>
 
-    <button class="record" onclick="startRecording()">Start Recording</button>
-    <button class="stop" onclick="stopRecording()">Stop Recording</button>
+    <button type="button" class="record" onclick="startRecording()">Start Recording</button>
+    <button type="button" class="stop" onclick="stopRecording()">Stop Recording</button>
 
     <audio id="audioPlayback" controls></audio>
 
-    <button class="submit" onclick="submitRecording()">Submit Voice Clip</button>
+    <button type="button" class="submit" onclick="submitRecording()">Submit Voice Clip</button>
 
     <p id="status"></p>
 </div>
@@ -215,9 +225,12 @@
         }
     };
 
-    let mediaRecorder;
+    let mediaRecorder = null;
     let audioChunks = [];
     let recordedBlob = null;
+    let recordingTimer = null;
+    let currentStream = null;
+    let selectedMimeType = "";
 
     function updateScript() {
         const emotion = document.getElementById("emotion").value;
@@ -229,82 +242,161 @@
         document.getElementById("scriptBox").innerText = randomScript;
     }
 
-    async function startRecording() {
-        audioChunks = [];
-        recordedBlob = null;
+    function getSupportedMimeType() {
+        const types = [
+            "audio/webm;codecs=opus",
+            "audio/webm",
+            "audio/mp4",
+            "audio/aac"
+        ];
 
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-
-        let mimeType = "";
-
-        if (MediaRecorder.isTypeSupported("audio/mp4")) {
-            mimeType = "audio/mp4";
-        } else if (MediaRecorder.isTypeSupported("audio/webm")) {
-            mimeType = "audio/webm";
+        for (const type of types) {
+            if (MediaRecorder.isTypeSupported(type)) {
+                return type;
+            }
         }
 
-        mediaRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+        return "";
+    }
 
-        mediaRecorder.ondataavailable = event => {
-            audioChunks.push(event.data);
-        };
+    async function startRecording() {
+        try {
+            audioChunks = [];
+            recordedBlob = null;
+            selectedMimeType = getSupportedMimeType();
 
-        mediaRecorder.onstop = () => {
-            recordedBlob = new Blob(audioChunks, { type: mimeType || "audio/webm" });
-            const audioUrl = URL.createObjectURL(recordedBlob);
-            document.getElementById("audioPlayback").src = audioUrl;
-        };
+            currentStream = await navigator.mediaDevices.getUserMedia({
+                audio: {
+                    echoCancellation: true,
+                    noiseSuppression: true,
+                    autoGainControl: true
+                }
+            });
 
-        mediaRecorder.start();
-        document.getElementById("status").innerText = "Recording started...";
+            mediaRecorder = new MediaRecorder(
+                currentStream,
+                selectedMimeType ? { mimeType: selectedMimeType } : {}
+            );
+
+            mediaRecorder.ondataavailable = function(event) {
+                if (event.data && event.data.size > 0) {
+                    audioChunks.push(event.data);
+                }
+            };
+
+            mediaRecorder.onstop = function() {
+                recordedBlob = new Blob(audioChunks, {
+                    type: selectedMimeType || "audio/webm"
+                });
+
+                const audioUrl = URL.createObjectURL(recordedBlob);
+                document.getElementById("audioPlayback").src = audioUrl;
+
+                document.getElementById("status").innerText =
+                    "Recording ready. Size: " + Math.round(recordedBlob.size / 1024) + " KB";
+
+                if (currentStream) {
+                    currentStream.getTracks().forEach(track => track.stop());
+                }
+            };
+
+            mediaRecorder.start(1000);
+
+            document.getElementById("status").innerText =
+                "Recording started... Maximum 8 seconds.";
+
+            recordingTimer = setTimeout(() => {
+                stopRecording();
+            }, 8000);
+
+        } catch (error) {
+            document.getElementById("status").innerText =
+                "Microphone error: " + error.message;
+            console.error(error);
+        }
     }
 
     function stopRecording() {
-        if (mediaRecorder) {
+        if (recordingTimer) {
+            clearTimeout(recordingTimer);
+            recordingTimer = null;
+        }
+
+        if (mediaRecorder && mediaRecorder.state !== "inactive") {
             mediaRecorder.stop();
-            document.getElementById("status").innerText = "Recording stopped. Please listen before submitting.";
+            document.getElementById("status").innerText =
+                "Recording stopped. Please listen before submitting.";
         }
     }
 
-async function submitRecording() {
-    if (!recordedBlob) {
-        alert("Please record your voice first.");
-        return;
-    }
-
-    document.getElementById("status").innerText = "Uploading...";
-
-    try {
-        const response = await fetch("/api/upload", {
-            method: "POST",
-            headers: {
-                "Content-Type": recordedBlob.type || "audio/webm"
-            },
-            body: recordedBlob
-        });
-
-        const result = await response.json();
-
-        if (!response.ok) {
-            throw new Error(result.error || result.details || "Upload failed");
+    async function submitRecording() {
+        if (!recordedBlob) {
+            alert("Please record your voice first.");
+            return;
         }
 
-        document.getElementById("status").innerText =
-            result.message || "Voice uploaded successfully!";
+        if (recordedBlob.size === 0) {
+            alert("Recording is empty. Please record again.");
+            return;
+        }
 
-        console.log("Uploaded file URL:", result.url);
+        if (recordedBlob.size > 4 * 1024 * 1024) {
+            alert("Voice file is too large. Please record less than 8 seconds.");
+            return;
+        }
 
-        recordedBlob = null;
-        document.getElementById("audioPlayback").src = "";
-        updateScript();
+        document.getElementById("status").innerText = "Uploading... please wait.";
 
-    } catch (error) {
-        document.getElementById("status").innerText =
-            "Submit failed: " + error.message;
+        const emotion = document.getElementById("emotion").value;
+        const language = document.getElementById("language").value;
+        const name = document.getElementById("name").value || "anonymous";
+        const ageRange = document.getElementById("age_range").value;
+        const gender = document.getElementById("gender").value;
+        const script = document.getElementById("scriptBox").innerText;
+        const noiseLevel = document.getElementById("noise_level").value;
 
-        console.error(error);
+        const metadata = {
+            name: name,
+            age_range: ageRange,
+            gender: gender,
+            language: language,
+            emotion: emotion,
+            script: script,
+            noise_level: noiseLevel
+        };
+
+        try {
+            const response = await fetch("/api/upload", {
+                method: "POST",
+                headers: {
+                    "Content-Type": recordedBlob.type || "audio/webm",
+                    "X-Metadata": encodeURIComponent(JSON.stringify(metadata))
+                },
+                body: recordedBlob
+            });
+
+            const result = await response.json();
+
+            if (!response.ok) {
+                throw new Error(result.error || result.details || "Upload failed");
+            }
+
+            document.getElementById("status").innerText =
+                "Submitted successfully! Thank you.";
+
+            console.log("Uploaded audio:", result.url);
+            console.log("Metadata:", result.metadata);
+
+            recordedBlob = null;
+            document.getElementById("audioPlayback").src = "";
+            updateScript();
+
+        } catch (error) {
+            document.getElementById("status").innerText =
+                "Submit failed: " + error.message;
+            console.error(error);
+        }
     }
-}
 
     updateScript();
 </script>
