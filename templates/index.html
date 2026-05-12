@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Voice Sentiment Data Collection</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background: #f5f7fb;
+            padding: 30px;
+        }
+
+        .container {
+            max-width: 650px;
+            margin: auto;
+            background: white;
+            padding: 25px;
+            border-radius: 15px;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.1);
+        }
+
+        h2 {
+            text-align: center;
+        }
+
+        label {
+            font-weight: bold;
+            margin-top: 12px;
+            display: block;
+        }
+
+        input, select, textarea, button {
+            width: 100%;
+            padding: 10px;
+            margin-top: 6px;
+            border-radius: 8px;
+            border: 1px solid #ccc;
+        }
+
+        button {
+            cursor: pointer;
+            font-weight: bold;
+            margin-top: 15px;
+        }
+
+        .record {
+            background: #e91e63;
+            color: white;
+        }
+
+        .stop {
+            background: #333;
+            color: white;
+        }
+
+        .submit {
+            background: #28a745;
+            color: white;
+        }
+
+        .script-box {
+            background: #eef3ff;
+            padding: 15px;
+            border-radius: 10px;
+            margin-top: 10px;
+            font-size: 18px;
+        }
+
+        audio {
+            width: 100%;
+            margin-top: 15px;
+        }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <h2>Voice Sentiment Data Collection</h2>
+
+    <label>Name / Nickname</label>
+    <input type="text" id="name" placeholder="Optional">
+
+    <label>Age Range</label>
+    <select id="age_range">
+        <option value="18-25">18-25</option>
+        <option value="26-35">26-35</option>
+        <option value="36-45">36-45</option>
+        <option value="46+">46+</option>
+    </select>
+
+    <label>Gender</label>
+    <select id="gender">
+        <option value="prefer_not_to_say">Prefer not to say</option>
+        <option value="female">Female</option>
+        <option value="male">Male</option>
+    </select>
+
+    <label>Language</label>
+    <select id="language" onchange="updateScript()">
+        <option value="english">English</option>
+        <option value="sinhala">Sinhala</option>
+        <option value="mixed">Sinhala-English Mixed</option>
+    </select>
+
+    <label>Emotion</label>
+    <select id="emotion" onchange="updateScript()">
+        <option value="happy">Happy</option>
+        <option value="sad">Sad</option>
+        <option value="angry">Angry</option>
+        <option value="neutral">Neutral</option>
+    </select>
+
+    <label>Script to Read</label>
+    <div class="script-box" id="scriptBox"></div>
+
+    <button onclick="updateScript()">Get Another Script</button>
+
+    <label>Recording Environment</label>
+    <select id="noise_level">
+        <option value="quiet">Quiet</option>
+        <option value="moderate_noise">Moderate Noise</option>
+        <option value="noisy">Noisy</option>
+    </select>
+
+    <button class="record" onclick="startRecording()">Start Recording</button>
+    <button class="stop" onclick="stopRecording()">Stop Recording</button>
+
+    <audio id="audioPlayback" controls></audio>
+
+    <button class="submit" onclick="submitRecording()">Submit Voice Clip</button>
+
+    <p id="status"></p>
+</div>
+
+<script>
+    const scripts = {
+        happy: {
+            english: [
+                "I am very happy today.",
+                "This is the best day ever.",
+                "I finally completed my work.",
+                "I feel amazing right now."
+            ],
+            sinhala: [
+                "Mata ada godak sathutui.",
+                "Ada mage hondama dawasak.",
+                "Mama exam eka pass una.",
+                "Mama ada hondin inne."
+            ],
+            mixed: [
+                "Ada mama really happy.",
+                "Today mama full happy mood eke.",
+                "Mata today awesome feeling ekak thiyenawa.",
+                "Mama me event eka enjoy kala."
+            ]
+        },
+        sad: {
+            english: [
+                "I feel very sad today.",
+                "Nothing is going right for me.",
+                "I am feeling very lonely.",
+                "I don't feel okay today."
+            ],
+            sinhala: [
+                "Mata ada godak dukai.",
+                "Mama godak upset.",
+                "Ada mood eka hondai ne.",
+                "Mata hariyata dukak thiyenawa."
+            ],
+            mixed: [
+                "Ada mama really sad.",
+                "Today mood eka totally down.",
+                "Mama okay ne today.",
+                "Today mama full upset."
+            ]
+        },
+        angry: {
+            english: [
+                "I am really angry right now.",
+                "This situation is unacceptable.",
+                "This makes me so frustrated.",
+                "I am losing my patience."
+            ],
+            sinhala: [
+                "Mata godak tharaha yanne.",
+                "Meka hariyata waradi.",
+                "Mata meka iwasa ganna behe.",
+                "Me service eka hondai ne."
+            ],
+            mixed: [
+                "Mata really tharaha yanne.",
+                "This is completely wrong bn.",
+                "Meka seriously unacceptable.",
+                "Mama patience eka lose karanawa."
+            ]
+        },
+        neutral: {
+            english: [
+                "I am going to class now.",
+                "Today is Monday morning.",
+                "The meeting starts at ten o'clock.",
+                "I have a lecture tomorrow."
+            ],
+            sinhala: [
+                "Mama dan class ekata yanawa.",
+                "Ada sanduda dawasak.",
+                "Meeting eka dahayata patan gannawa.",
+                "Mata heta lecture ekak thiyenawa."
+            ],
+            mixed: [
+                "Mama now class ekata yanawa.",
+                "Today Monday dawasak.",
+                "Meeting eka ten o’clock patan gannawa.",
+                "Mata tomorrow lecture ekak thiyenawa."
+            ]
+        }
+    };
+
+    let mediaRecorder;
+    let audioChunks = [];
+    let recordedBlob = null;
+
+    function updateScript() {
+        const emotion = document.getElementById("emotion").value;
+        const language = document.getElementById("language").value;
+
+        const selectedScripts = scripts[emotion][language];
+        const randomScript = selectedScripts[Math.floor(Math.random() * selectedScripts.length)];
+
+        document.getElementById("scriptBox").innerText = randomScript;
+    }
+
+    async function startRecording() {
+        audioChunks = [];
+        recordedBlob = null;
+
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+
+        mediaRecorder.ondataavailable = event => {
+            audioChunks.push(event.data);
+        };
+
+        mediaRecorder.onstop = () => {
+            recordedBlob = new Blob(audioChunks, { type: "audio/webm" });
+            const audioUrl = URL.createObjectURL(recordedBlob);
+            document.getElementById("audioPlayback").src = audioUrl;
+        };
+
+        mediaRecorder.start();
+        document.getElementById("status").innerText = "Recording started...";
+    }
+
+    function stopRecording() {
+        if (mediaRecorder) {
+            mediaRecorder.stop();
+            document.getElementById("status").innerText = "Recording stopped. Please listen before submitting.";
+        }
+    }
+
+    async function submitRecording() {
+        if (!recordedBlob) {
+            alert("Please record your voice first.");
+            return;
+        }
+
+        const formData = new FormData();
+
+        formData.append("audio", recordedBlob, "voice.webm");
+        formData.append("name", document.getElementById("name").value);
+        formData.append("age_range", document.getElementById("age_range").value);
+        formData.append("gender", document.getElementById("gender").value);
+        formData.append("language", document.getElementById("language").value);
+        formData.append("emotion", document.getElementById("emotion").value);
+        formData.append("script", document.getElementById("scriptBox").innerText);
+        formData.append("noise_level", document.getElementById("noise_level").value);
+
+        const response = await fetch("/upload", {
+            method: "POST",
+            body: formData
+        });
+
+        const result = await response.json();
+        document.getElementById("status").innerText = result.message;
+
+        recordedBlob = null;
+        document.getElementById("audioPlayback").src = "";
+        updateScript();
+    }
+
+    updateScript();
+</script>
+
+</body>
+</html>
