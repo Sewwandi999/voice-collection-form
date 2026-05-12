@@ -266,24 +266,15 @@
         }
     }
 
-    async function submitRecording() {
-        if (!recordedBlob) {
-            alert("Please record your voice first.");
-            return;
-        }
+async function submitRecording() {
+    if (!recordedBlob) {
+        alert("Please record your voice first.");
+        return;
+    }
 
-        const formData = new FormData();
+    document.getElementById("status").innerText = "Uploading...";
 
-        const extension = recordedBlob.type.includes("mp4") ? "m4a" : "webm";
-        formData.append("audio", recordedBlob, "voice." + extension);
-        formData.append("name", document.getElementById("name").value);
-        formData.append("age_range", document.getElementById("age_range").value);
-        formData.append("gender", document.getElementById("gender").value);
-        formData.append("language", document.getElementById("language").value);
-        formData.append("emotion", document.getElementById("emotion").value);
-        formData.append("script", document.getElementById("scriptBox").innerText);
-        formData.append("noise_level", document.getElementById("noise_level").value);
-
+    try {
         const response = await fetch("/api/upload", {
             method: "POST",
             headers: {
@@ -293,12 +284,27 @@
         });
 
         const result = await response.json();
-        document.getElementById("status").innerText = result.message;
+
+        if (!response.ok) {
+            throw new Error(result.error || result.details || "Upload failed");
+        }
+
+        document.getElementById("status").innerText =
+            result.message || "Voice uploaded successfully!";
+
+        console.log("Uploaded file URL:", result.url);
 
         recordedBlob = null;
         document.getElementById("audioPlayback").src = "";
         updateScript();
+
+    } catch (error) {
+        document.getElementById("status").innerText =
+            "Submit failed: " + error.message;
+
+        console.error(error);
     }
+}
 
     updateScript();
 </script>
